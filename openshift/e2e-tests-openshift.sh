@@ -7,7 +7,8 @@ source $(dirname $0)/pipeline-latest-release.sh
 set -x
 
 readonly API_SERVER=$(oc config view --minify | grep server | awk -F'//' '{print $2}' | awk -F':' '{print $1}')
-readonly OPENSHIFT_REGISTRY_PREFIX="${OPENSHIFT_REGISTRY_PREFIX:-${IMAGE_FORMAT//:\$\{component\}/}}"
+# This needs to be updated. It's a hack to add registry using ENV from OpenShift CI
+readonly OPENSHIFT_REGISTRY_PREFIX="REPLACE_THIS"
 readonly TEST_NAMESPACE=tekton-triggers-tests
 readonly TEKTON_TRIGGERS_NAMESPACE=tekton-pipelines
 readonly KO_DOCKER_REPO=image-registry.openshift-image-registry.svc:5000/tektoncd-triggers
@@ -19,6 +20,19 @@ readonly OPENSHIFT_BUILD_NAMESPACE=${OPENSHIFT_BUILD_NAMESPACE:-tektoncd-build-$
 # of rights.
 # test-git-volume: `"gitRepo": gitRepo volumes are not allowed to be used]'
 declare -ar SKIP_YAML_TEST=(test-git-volume)
+
+function replaceImagesWithCIBuilds() {
+  RELEASE_YAML=$1
+  REGISTRY_PREFIX=$2
+
+  # Substitute images using the images built by OpenShift CI
+  # Ref: https://github.com/openshift/release/pull/21940
+  sed -i -e "s|${REGISTRY_PREFIX}:tektoncd-triggers-controller|${TEKTONCD_TRIGGERS_CONTROLLER}|g" ${RELEASE_YAML}
+  sed -i -e "s|${REGISTRY_PREFIX}:tektoncd-triggers-eventlistenersink|${TEKTONCD_TRIGGERS_EVENTLISTENERSINK}|g" ${RELEASE_YAML}
+  sed -i -e "s|${REGISTRY_PREFIX}:tektoncd-triggers-interceptors|${TEKTONCD_TRIGGERS_INTERCEPTORS}|g" ${RELEASE_YAML}
+  sed -i -e "s|${REGISTRY_PREFIX}:tektoncd-triggers-webhook|${TEKTONCD_TRIGGERS_WEBHOOK}|g" ${RELEASE_YAML}
+}
+
 
 function install_pipeline_crd() {
   local latestreleaseyaml
@@ -54,8 +68,10 @@ function install_tekton_triggers() {
 
 function create_triggers() {
   resolve_resources config/ tekton-triggers-resolved.yaml "nothing" $OPENSHIFT_REGISTRY_PREFIX
+  replaceImagesWithCIBuilds tekton-triggers-resolved.yaml $OPENSHIFT_REGISTRY_PREFIX
   oc apply -f tekton-triggers-resolved.yaml
   resolve_resources config/interceptors tekton-triggers-resolved-interceptors.yaml "nothing" $OPENSHIFT_REGISTRY_PREFIX
+  replaceImagesWithCIBuilds tekton-triggers-resolved-interceptors.yaml $OPENSHIFT_REGISTRY_PREFIX
   oc apply -f tekton-triggers-resolved-interceptors.yaml
 }
 
