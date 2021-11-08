@@ -3,18 +3,19 @@
 # Synchs the release-next branch to master and then triggers CI
 # Usage: update-to-head.sh
 
-set -e
-REPO_NAME=$(basename $(git rev-parse --show-toplevel))
-[[ ${REPO_NAME} != tektoncd-* ]] && REPO_NAME=tektoncd-${REPO_NAME}
+set -ex
+REPO_NAME=${REPO_NAME:-tektoncd-triggers}
+OPENSHIFT_REMOTE=${OPENSHIFT_REMOTE:-openshift}
 TODAY=`date "+%Y%m%d"`
+LABEL=nightly-ci
 
 # Reset release-next to upstream/main.
 git fetch upstream main
 git checkout upstream/main --no-track -B release-next
 
 # Update openshift's master and take all needed files from there.
-git fetch openshift master
-git checkout openshift/master openshift Makefile OWNERS_ALIASES OWNERS
+git fetch ${OPENSHIFT_REMOTE} master
+git checkout ${OPENSHIFT_REMOTE}/master openshift Makefile OWNERS_ALIASES OWNERS
 make generate-dockerfiles
 
 git add openshift OWNERS_ALIASES OWNERS Makefile
@@ -28,13 +29,14 @@ if [[ -d openshift/patches ]];then
 fi
 
 # add release.yaml from previous successful nightly build to re-synced release-next as a backup
-git fetch openshift release-next
+git fetch ${OPENSHIFT_REMOTE} release-next
+
 git checkout FETCH_HEAD openshift/release/tektoncd-triggers-nightly.yaml
 
 git add openshift/release/tektoncd-triggers-nightly.yaml
 git commit -m ":robot: Add previous days release.yaml as back up"
 
-git push -f openshift release-next
+git push -f ${OPENSHIFT_REMOTE} release-next
 
 # Trigger CI
 git checkout release-next -B release-next-ci
@@ -45,15 +47,16 @@ date > ci
 git add ci openshift/release/tektoncd-triggers-nightly.yaml
 git commit -m ":robot: Triggering CI on branch 'release-next' after synching to upstream/master"
 
-git push -f openshift release-next-ci
+git push -f ${OPENSHIFT_REMOTE} release-next-ci
 
-if hash hub 2>/dev/null; then
-   # Test if there is already a sync PR in 
-   COUNT=$(hub api -H "Accept: application/vnd.github.v3+json" repos/openshift/${REPO_NAME}/pulls --flat \
-    | grep -c ":robot: Triggering CI on branch 'release-next' after synching to upstream/[master|main]") || true
-   if [ "$COUNT" = "0" ]; then
-      hub pull-request --no-edit -l "kind/sync-fork-to-upstream" -b openshift/${REPO_NAME}:release-next -h openshift/${REPO_NAME}:release-next-ci
-   fi
-else
-   echo "hub (https://github.com/github/hub) is not installed, so you'll need to create a PR manually."
-fi
+# removing upstream remote so that hub points origin for hub pr list command due to this issue https://github.com/github/hub/issues/1973
+git remote remove upstream
+already_open_github_issue_id=$(hub pr list -s open -f "%I %l%n"|grep ${LABEL}| awk '{print $1}'|head -1)
+[[ -n ${already_open_github_issue_id} ]]  && {
+    echo "PR for nightly is already open on #${already_open_github_issue_id}"
+    #hub api repos/${OPENSHIFT_ORG}/${REPO_NAME}/issues/${already_open_github_issue_id}/comments -f body='/retest'
+    exit 0
+}
+
+hub pull-request -m "🛑🔥 Triggering Nightly CI for ${REPO_NAME} 🔥🛑" -m "/hold" -m "Nightly CI do not merge :stop_sign:" \
+    --no-edit -l "${LABEL}" -b ${OPENSHIFT_REMOTE}/${REPO_NAME}:release-next -h ${OPENSHIFT_REMOTE}/${REPO_NAME}:release-next-ci
