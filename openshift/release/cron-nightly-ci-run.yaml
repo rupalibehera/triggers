@@ -1,0 +1,20 @@
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: pipelines-triggers-nightly-ci-run
+spec:
+  failedJobsHistoryLimit: 1
+  successfulJobsHistoryLimit: 1
+  concurrencyPolicy: Replace
+  schedule: "0 0 * * *"
+  startingDeadlineSeconds: 200
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: nightly-ci-sa
+          containers:
+            - name: cleanup
+              image: quay.io/openshift/origin-cli:4.6
+              command: ["/bin/bash", "-c", "kubectl delete pipelinerun pipelines-triggers-nightly || true;kubectl create -f https://raw.githubusercontent.com/openshift/tektoncd-triggers/master/openshift/release/nightly-ci-run.yaml"]
+          restartPolicy: Never
