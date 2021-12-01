@@ -23,7 +23,7 @@ spec:
             value: ""
           - name: deleteExisting
             value: "true"
-      - name: create-pr
+      - name: sync-upstream-to-midstream
         runAfter:
           - fetch-repository
         workspaces:
@@ -33,7 +33,7 @@ spec:
           workspaces:
             - name: source
           steps:
-            - name: create-pr
+            - name: sync-upstream-to-midstream
               workingDir: $(workspaces.source.path)
               env:
                 - name: HUB_VERSION
